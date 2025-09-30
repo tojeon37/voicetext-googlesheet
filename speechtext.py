@@ -250,6 +250,7 @@ class SimpleVoiceProcessor:
                         self.display_result(f"[서버 오류] {error_msg}", 0.0)
                 else:
                     print(f"❌ HTTP 오류: {response.status_code}")
+                    print(f"응답 내용: {response.text}")
                     self.display_result(f"[HTTP 오류] {response.status_code}", 0.0)
                     
             except requests.exceptions.Timeout:
