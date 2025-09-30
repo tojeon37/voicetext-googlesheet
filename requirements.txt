@@ -1,4 +1,4 @@
-tkinter
+
 speechrecognition==3.10.0
 pyaudio==0.2.11
 wave
