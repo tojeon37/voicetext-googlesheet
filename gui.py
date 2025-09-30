@@ -93,6 +93,10 @@ class SimpleVoiceGUI:
         refresh_spreadsheet_button = ttk.Button(spreadsheet_frame, text="새로고침", command=self.refresh_spreadsheets)
         refresh_spreadsheet_button.grid(row=0, column=2)
         
+        # 스프레드시트 자동 감지 버튼 (방법 3A)
+        auto_detect_button = ttk.Button(spreadsheet_frame, text="자동 감지", command=self.auto_detect_spreadsheet)
+        auto_detect_button.grid(row=0, column=3, padx=(5, 0))
+        
         # 시트 선택 프레임
         sheet_frame = ttk.LabelFrame(main_frame, text="시트 선택", padding="5")
         sheet_frame.grid(row=6, column=0, columnspan=2, sticky=(tk.W, tk.E), pady=(10, 0))
@@ -449,10 +453,14 @@ class SimpleVoiceGUI:
             print(f"시트 목록 새로고침 오류: {e}")
     
     def on_spreadsheet_selected(self, event):
-        """스프레드시트 선택 이벤트 처리"""
+        """스프레드시트 선택 이벤트 처리 (방법 3A)"""
         try:
             selected_spreadsheet = self.spreadsheet_var.get()
             if selected_spreadsheet and self.sheet_handler:
+                # 선택된 스프레드시트가 허용 목록에 없으면 추가
+                if hasattr(self.sheet_handler, 'add_allowed_spreadsheet'):
+                    self.sheet_handler.add_allowed_spreadsheet(selected_spreadsheet)
+                
                 success = self.sheet_handler.set_target_spreadsheet(selected_spreadsheet)
                 if success:
                     print(f"✅ 스프레드시트 변경 완료: {selected_spreadsheet}")
@@ -484,6 +492,45 @@ class SimpleVoiceGUI:
                     print(f"❌ 시트 변경 실패: {selected_sheet}")
         except Exception as e:
             print(f"시트 선택 오류: {e}")
+    
+    def auto_detect_spreadsheet(self):
+        """스프레드시트 자동 감지 (방법 3A)"""
+        try:
+            print("🔍 스프레드시트 자동 감지 시작...")
+            
+            if not self.sheet_handler:
+                print("❌ sheet_handler가 없습니다")
+                return
+            
+            # GUI 상태 업데이트
+            self.update_status("🔍 스프레드시트 자동 감지 중...", "blue")
+            
+            # 자동 감지 실행
+            if hasattr(self.sheet_handler, 'auto_detect_spreadsheet'):
+                self.sheet_handler.auto_detect_spreadsheet()
+                
+                # 자동 감지 후 스프레드시트 목록 새로고침
+                self.refresh_spreadsheets()
+                
+                # 자동 감지된 스프레드시트가 있으면 선택
+                if self.sheet_handler.spreadsheet:
+                    detected_name = self.sheet_handler.spreadsheet.title
+                    self.spreadsheet_var.set(detected_name)
+                    print(f"✅ 자동 감지 완료: {detected_name}")
+                    self.update_status(f"✅ 자동 감지 완료: {detected_name}", "green")
+                    
+                    # 시트 목록도 새로고침
+                    self.refresh_sheets()
+                else:
+                    print("❌ 자동 감지된 스프레드시트가 없습니다")
+                    self.update_status("❌ 자동 감지된 스프레드시트가 없습니다", "red")
+            else:
+                print("❌ 자동 감지 기능을 사용할 수 없습니다")
+                self.update_status("❌ 자동 감지 기능을 사용할 수 없습니다", "red")
+                
+        except Exception as e:
+            print(f"자동 감지 오류: {e}")
+            self.update_status(f"❌ 자동 감지 오류: {str(e)[:30]}...", "red")
     
     def setup_styles(self):
         """버튼 스타일 설정"""

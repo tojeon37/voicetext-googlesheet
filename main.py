@@ -45,7 +45,8 @@ class SettingsManager:
             "last_sheet": "시트1",
             "last_cell": "A1",
             "last_row": 1,
-            "last_col": 1
+            "last_col": 1,
+            "allowed_spreadsheets": ["음성기록"]  # 접근 허용된 스프레드시트 목록
         }
     
     def get_setting(self, key, default=None):
@@ -68,7 +69,7 @@ class GoogleSheetHandler:
         self.setup_google_sheet()
     
     def setup_google_sheet(self):
-        """구글 스프레드시트 설정"""
+        """구글 스프레드시트 설정 (자동 감지 방식)"""
         try:
             print("🔗 구글 시트 연결 중...")
             
@@ -99,54 +100,63 @@ class GoogleSheetHandler:
             except Exception as e:
                 print(f"⚠️ 서비스 계정 정보 확인 실패: {e}")
             
-            # 스프레드시트 접근 방법 1: 직접 스프레드시트 ID 사용
-            print("🔍 스프레드시트 접근 중...")
-            try:
-                # 방법 1: 스프레드시트 ID로 직접 접근 (가장 안정적)
-                # 스프레드시트 URL에서 ID를 추출하여 사용
-                # 예: https://docs.google.com/spreadsheets/d/1ABC123.../edit
-                # ID 부분만 사용: 1ABC123...
+            # 자동 감지 방식으로 스프레드시트 설정
+            print("🔍 스프레드시트 자동 감지 중...")
+            self.auto_detect_spreadsheet()
                 
-                # 스프레드시트 이름으로 접근 시도
-                try:
-                    spreadsheet = self.gc.open("음성기록")
-                    # 기본 시트 설정하지 않음 - GUI에서 설정하도록 함
-                    self.spreadsheet = spreadsheet  # 전체 스프레드시트 객체 저장
-                    print(f"✅ 스프레드시트 직접 접근 성공: 음성기록")
-                    print("✅ 구글 스프레드시트 연결 성공: 음성기록")
+        except Exception as e:
+            print(f"❌ 구글 시트 연결 실패: {e}")
+            print("📁 로컬 CSV 파일로 폴백")
+            self.sheet = None
+    
+    def auto_detect_spreadsheet(self):
+        """자동으로 스프레드시트 감지 및 설정"""
+        try:
+            # 설정에서 허용된 스프레드시트 목록 가져오기
+            allowed_spreadsheets = []
+            if self.settings_manager:
+                allowed_spreadsheets = self.settings_manager.get_setting("allowed_spreadsheets", ["음성기록"])
+            else:
+                allowed_spreadsheets = ["음성기록"]  # 기본값
+            
+            print(f"🔒 허용된 스프레드시트: {allowed_spreadsheets}")
+            
+            # 모든 스프레드시트 가져오기
+            all_spreadsheets = self.gc.openall()
+            print(f"📊 접근 가능한 스프레드시트: {[s.title for s in all_spreadsheets]}")
+            
+            # 허용된 스프레드시트 중에서 우선순위에 따라 선택
+            priority_names = allowed_spreadsheets.copy()
+            
+            # 1단계: 우선순위에 따라 스프레드시트 찾기
+            for priority_name in priority_names:
+                for spreadsheet in all_spreadsheets:
+                    if spreadsheet.title == priority_name:
+                        self.spreadsheet = spreadsheet
+                        print(f"✅ 자동 감지된 스프레드시트: {priority_name}")
+                        print("✅ 구글 스프레드시트 연결 성공 (자동 감지)")
+                        return
+            
+            # 2단계: 우선순위에 없으면 허용된 스프레드시트 중 첫 번째 사용
+            for spreadsheet in all_spreadsheets:
+                if spreadsheet.title in allowed_spreadsheets:
+                    self.spreadsheet = spreadsheet
+                    print(f"✅ 허용된 스프레드시트 자동 선택: {spreadsheet.title}")
+                    print("✅ 구글 스프레드시트 연결 성공 (허용된 목록에서 선택)")
                     return
-                except Exception as direct_error:
-                    print(f"직접 접근 실패: {direct_error}")
-                    
-                    # 방법 2: 기존 스프레드시트 목록에서 검색
-                    print("🔍 기존 스프레드시트 목록에서 검색 중...")
-                    spreadsheets = self.gc.openall()
-                    target_sheet = None
-                    
-                    for spreadsheet in spreadsheets:
-                        if spreadsheet.title == "음성기록":
-                            target_sheet = spreadsheet
-                            print(f"발견된 시트: {spreadsheet.title}")
-                            break
-                    
-                    if target_sheet:
-                        # 기본 시트 설정하지 않음 - GUI에서 설정하도록 함
-                        self.spreadsheet = target_sheet
-                        print(f"✅ 기존 스프레드시트 발견: {target_sheet.title}")
-                        print("✅ 구글 스프레드시트 연결 성공: 음성기록")
-                    else:
-                        print("❌ '음성기록' 스프레드시트를 찾을 수 없습니다.")
-                        print("📁 로컬 CSV 파일로 폴백")
-                        self.sheet = None
-                
-            except Exception as e:
-                print(f"스프레드시트 접근 오류: {e}")
-                # 로컬 파일로 폴백
+            
+            # 3단계: 허용된 스프레드시트가 없으면 첫 번째 스프레드시트 사용 (경고와 함께)
+            if all_spreadsheets:
+                self.spreadsheet = all_spreadsheets[0]
+                print(f"⚠️ 허용된 스프레드시트가 없어 기본 스프레드시트 사용: {all_spreadsheets[0].title}")
+                print("✅ 구글 스프레드시트 연결 성공 (기본 선택)")
+            else:
+                print("❌ 접근 가능한 스프레드시트가 없습니다.")
                 print("📁 로컬 CSV 파일로 폴백")
                 self.sheet = None
                 
         except Exception as e:
-            print(f"❌ 구글 시트 연결 실패: {e}")
+            print(f"❌ 스프레드시트 자동 감지 실패: {e}")
             print("📁 로컬 CSV 파일로 폴백")
             self.sheet = None
     
@@ -201,9 +211,9 @@ class GoogleSheetHandler:
             print(f"데이터 저장 오류: {e}")
     
     def get_all_spreadsheets(self):
-        """모든 스프레드시트 목록 가져오기 (gspread 사용)"""
+        """허용된 스프레드시트 목록만 가져오기 (보안 강화)"""
         try:
-            print("🔍 스프레드시트 목록 가져오기...")
+            print("🔍 허용된 스프레드시트 목록 가져오기...")
             
             if not hasattr(self, 'gc') or not self.gc:
                 # gspread 클라이언트 다시 생성
@@ -217,20 +227,33 @@ class GoogleSheetHandler:
                 )
                 self.gc = gspread.authorize(creds)
             
-            # 모든 스프레드시트 가져오기 (gspread 방법)
-            spreadsheets = self.gc.openall()
+            # 설정에서 허용된 스프레드시트 목록 가져오기
+            allowed_spreadsheets = []
+            if self.settings_manager:
+                allowed_spreadsheets = self.settings_manager.get_setting("allowed_spreadsheets", ["음성기록"])
+            else:
+                allowed_spreadsheets = ["음성기록"]  # 기본값
             
-            all_spreadsheets = []
-            for spreadsheet in spreadsheets:
-                all_spreadsheets.append({
-                    'title': spreadsheet.title,
-                    'id': spreadsheet.id,
-                    'spreadsheet': spreadsheet
-                })
-                print(f"  📊 {spreadsheet.title} (ID: {spreadsheet.id})")
+            print(f"🔒 허용된 스프레드시트: {allowed_spreadsheets}")
             
-            print(f"✅ 스프레드시트 목록 가져오기 성공: {len(all_spreadsheets)}개")
-            return all_spreadsheets
+            # 모든 스프레드시트 가져오기
+            all_spreadsheets = self.gc.openall()
+            
+            # 허용된 스프레드시트만 필터링
+            filtered_spreadsheets = []
+            for spreadsheet in all_spreadsheets:
+                if spreadsheet.title in allowed_spreadsheets:
+                    filtered_spreadsheets.append({
+                        'title': spreadsheet.title,
+                        'id': spreadsheet.id,
+                        'spreadsheet': spreadsheet
+                    })
+                    print(f"  📊 {spreadsheet.title} (ID: {spreadsheet.id}) - 허용됨")
+                else:
+                    print(f"  🚫 {spreadsheet.title} (ID: {spreadsheet.id}) - 접근 차단됨")
+            
+            print(f"✅ 허용된 스프레드시트 목록 가져오기 성공: {len(filtered_spreadsheets)}개")
+            return filtered_spreadsheets
                 
         except Exception as e:
             print(f"❌ 스프레드시트 목록 가져오기 실패: {e}")
@@ -282,6 +305,33 @@ class GoogleSheetHandler:
             
         except Exception as e:
             print(f"스프레드시트 설정 오류: {e}")
+            return False
+    
+    def add_allowed_spreadsheet(self, spreadsheet_title):
+        """허용된 스프레드시트 목록에 추가 (방법 3A)"""
+        try:
+            if not self.settings_manager:
+                print("❌ settings_manager가 없습니다")
+                return False
+            
+            # 현재 허용된 스프레드시트 목록 가져오기
+            current_allowed = self.settings_manager.get_setting("allowed_spreadsheets", ["음성기록"])
+            
+            # 이미 목록에 있으면 추가하지 않음
+            if spreadsheet_title in current_allowed:
+                print(f"✅ 스프레드시트가 이미 허용 목록에 있습니다: {spreadsheet_title}")
+                return True
+            
+            # 새 스프레드시트를 목록에 추가
+            current_allowed.append(spreadsheet_title)
+            self.settings_manager.set_setting("allowed_spreadsheets", current_allowed)
+            
+            print(f"✅ 허용된 스프레드시트 목록에 추가: {spreadsheet_title}")
+            print(f"📋 현재 허용 목록: {current_allowed}")
+            return True
+            
+        except Exception as e:
+            print(f"허용된 스프레드시트 추가 오류: {e}")
             return False
 
     def set_target_sheet(self, sheet_title):
