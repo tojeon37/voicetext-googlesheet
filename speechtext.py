@@ -3,7 +3,7 @@ import wave
 import pyaudio
 import threading
 import os
-from google.cloud import speech
+import requests
 from datetime import datetime
 
 class SimpleVoiceProcessor:
@@ -20,25 +20,27 @@ class SimpleVoiceProcessor:
         self.CHANNELS = 1
         self.RECORD_SECONDS = 15  # 15초로 연장
         
-        # Google Cloud Speech-to-Text 클라이언트
-        self.speech_client = None
-        self.setup_google_cloud_speech()
+        # Cloud Run 서버 설정
+        self.api_url = "https://voicetext-api-6qtb5op6hq-du.a.run.app"
+        self.setup_cloud_run_api()
         
-    def setup_google_cloud_speech(self):
-        """Google Cloud Speech-to-Text 클라이언트 설정 (클로드간단버전과 동일)"""
+    def setup_cloud_run_api(self):
+        """Cloud Run 서버 연결 설정"""
         try:
-            print("🔗 Google Cloud Speech-to-Text 연결 중...")
+            print("🔗 Cloud Run 서버 연결 중...")
             
-            # 클로드간단버전과 동일한 방식으로 클라이언트 생성
-            self.speech_client = speech.SpeechClient.from_service_account_file(
-                "voicetext-472910-82f1fa0a8fbe.json"
-            )
-            
-            print("✅ Google Cloud Speech-to-Text 클라이언트 연결 성공!")
+            # 서버 연결 테스트
+            test_response = requests.get(f"{self.api_url}/", timeout=10)
+            if test_response.status_code == 200:
+                print("✅ Cloud Run 서버 연결 성공!")
+                self.api_available = True
+            else:
+                print(f"⚠️ Cloud Run 서버 응답 오류: {test_response.status_code}")
+                self.api_available = False
             
         except Exception as e:
-            print(f"❌ Google Cloud Speech-to-Text 연결 실패: {e}")
-            self.speech_client = None
+            print(f"❌ Cloud Run 서버 연결 실패: {e}")
+            self.api_available = False
     
     def set_gui(self, gui):
         """GUI 참조 설정"""
@@ -208,48 +210,56 @@ class SimpleVoiceProcessor:
                 self.gui.reset_buttons()
     
     def speech_to_text_simple(self, audio_file):
-        """클로드간단버전과 동일한 음성 인식"""
+        """Cloud Run 서버를 통한 음성 인식"""
         try:
-            if not self.speech_client:
-                print("Google Cloud API 사용 불가능")
-                text, confidence = "[오류] Google Cloud API 연결 실패", 0.0
+            if not self.api_available:
+                print("Cloud Run API 사용 불가능")
+                text, confidence = "[오류] Cloud Run 서버 연결 실패", 0.0
                 self.display_result(text, confidence)
                 return
             
-            # 클로드간단버전과 동일한 방식으로 오디오 파일 읽기
-            with open(audio_file, 'rb') as audio_file_content:
-                content = audio_file_content.read()
-            
-            # 클로드간단버전과 동일한 최소한의 설정만 사용
-            config = speech.RecognitionConfig(
-                encoding=speech.RecognitionConfig.AudioEncoding.LINEAR16,
-                sample_rate_hertz=self.RATE,
-                language_code="ko-KR"
-                # 다른 복잡한 옵션들은 모두 제거
-            )
-            
-            audio_obj = speech.RecognitionAudio(content=content)
-            
+            # Cloud Run 서버로 HTTP 요청
             try:
-                response = self.speech_client.recognize(config=config, audio=audio_obj)
+                with open(audio_file, 'rb') as f:
+                    files = {'audio': f}
+                    data = {
+                        'language': 'ko-KR',
+                        'sample_rate': self.RATE,
+                        'encoding': 'LINEAR16'
+                    }
+                    
+                    print("☁️ Cloud Run 서버로 음성 인식 요청 중...")
+                    response = requests.post(
+                        f"{self.api_url}/transcribe",
+                        files=files,
+                        data=data,
+                        timeout=60
+                    )
                 
-                if response.results:
-                    result = response.results[0]
-                    if result.alternatives:
-                        text = result.alternatives[0].transcript
-                        confidence = result.alternatives[0].confidence
+                if response.status_code == 200:
+                    result = response.json()
+                    if result.get('success', False):
+                        text = result.get('transcript', '')
+                        confidence = result.get('confidence', 0.0)
                         
                         print(f"✅ 인식 완료: '{text}' (신뢰도: {confidence:.2f})")
                         self.display_result(text, confidence)
                     else:
-                        print("❌ 인식 결과 없음")
-                        self.display_result("[음성 인식 실패] 음성을 인식할 수 없습니다", 0.0)
+                        error_msg = result.get('error', '음성 인식 실패')
+                        print(f"❌ 서버 오류: {error_msg}")
+                        self.display_result(f"[서버 오류] {error_msg}", 0.0)
                 else:
-                    print("❌ 인식 결과 없음")
-                    self.display_result("[음성 인식 실패] 음성을 인식할 수 없습니다", 0.0)
+                    print(f"❌ HTTP 오류: {response.status_code}")
+                    self.display_result(f"[HTTP 오류] {response.status_code}", 0.0)
                     
+            except requests.exceptions.Timeout:
+                print("❌ 요청 시간 초과")
+                self.display_result("[오류] 서버 응답 시간 초과", 0.0)
+            except requests.exceptions.RequestException as e:
+                print(f"❌ 네트워크 오류: {e}")
+                self.display_result(f"[네트워크 오류] {str(e)[:50]}...", 0.0)
             except Exception as e:
-                print(f"API 오류: {e}")
+                print(f"❌ API 오류: {e}")
                 self.display_result(f"[API 오류] {str(e)[:50]}...", 0.0)
             
         except Exception as e:
